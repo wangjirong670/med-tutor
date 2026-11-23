@@ -1,0 +1,197 @@
+/* =============================================================================
+ * New-thread empty state — the composer is the hero.
+ * Extracted from main.css; hero scale dialed back from marketing-size to a
+ * restrained, Codex-like empty state.
+ * ========================================================================== */
+
+.new-thread {
+  min-height: calc(100vh - var(--window-titlebar-height) - 148px);
+  display: grid;
+  align-content: center;
+  gap: 22px;
+  padding-bottom: 18px;
+}
+
+.new-thread__hero {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  text-align: center;
+}
+
+.new-thread__logo {
+  width: 56px;
+  height: 56px;
+  display: grid;
+  place-items: center;
+  margin-bottom: 2px;
+  filter: drop-shadow(0 8px 18px color-mix(in srgb, var(--accent) 18%, transparent));
+}
+
+.new-thread__logo svg {
+  width: 56px;
+  height: 56px;
+  display: block;
+}
+
+.new-thread__eyebrow {
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 680;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.new-thread__hero h1 {
+  margin: 0;
+  color: var(--text-strong);
+  font-size: 30px;
+  font-weight: 650;
+  letter-spacing: -0.025em;
+  line-height: 1.22;
+}
+
+.new-thread__title {
+  margin: 0;
+}
+
+.new-thread__subtitle {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 460;
+  letter-spacing: 0.02em;
+  line-height: 1.5;
+}
+
+.new-thread__workspace-picker {
+  display: grid;
+  justify-items: center;
+  margin-top: 2px;
+}
+
+.new-thread__workspace {
+  padding: 6px 14px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--text-strong);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 520;
+  box-shadow: var(--shadow-sm);
+  transition:
+    border-color var(--motion-fast) var(--ease-out),
+    background var(--motion-fast) var(--ease-out);
+}
+
+.new-thread__workspace:hover {
+  border-color: var(--accent-tint-border);
+}
+
+.new-thread__composer {
+  width: min(820px, 100%);
+  margin: 0 auto;
+  display: grid;
+  gap: 12px;
+}
+
+.new-thread__quick-prompts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.new-thread__quick-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 13px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--muted-strong);
+  font-size: 12.5px;
+  font-weight: 500;
+  line-height: 1.35;
+  box-shadow: var(--shadow-sm);
+  transition:
+    background var(--motion-fast) var(--ease-out),
+    border-color var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
+}
+
+.new-thread__quick-pill:hover {
+  background: var(--accent-tint-bg);
+  border-color: var(--accent-tint-border);
+  color: var(--text-strong);
+  transform: translateY(-1px);
+}
+
+.new-thread__quick-pill-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-round);
+  background: var(--accent);
+  opacity: 0.78;
+  flex: none;
+}
+
+.new-thread__composer.composer {
+  padding: 0;
+  background: transparent;
+}
+
+.new-thread__composer .conversation--composer {
+  width: 100%;
+}
+
+.new-thread__environment-group {
+  display: inline-flex;
+  gap: 8px;
+}
+
+.new-thread__environment {
+  padding: 7px 11px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--line);
+  background: var(--surface-muted);
+  color: var(--muted-strong);
+  font-size: 13px;
+  font-weight: 560;
+}
+
+.new-thread__environment--active {
+  border-color: var(--line-strong);
+  background: var(--accent-tint-bg);
+  color: var(--text-strong);
+}
+
+.new-thread__textarea {
+  min-height: 100px;
+  resize: vertical;
+  border: none;
+  background: transparent;
+  color: var(--text-strong);
+  font: inherit;
+  font-size: 15px;
+  line-height: 1.55;
+}
+
+.new-thread__textarea:focus {
+  outline: none;
+}
+
+.new-thread__hint {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.new-thread__hint-separator {
+  color: var(--muted-soft);
+}

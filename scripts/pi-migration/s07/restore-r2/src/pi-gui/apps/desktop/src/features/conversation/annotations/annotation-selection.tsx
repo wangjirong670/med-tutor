@@ -1,0 +1,440 @@
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useTranslation } from "../../../i18n";
+import { CloseIcon } from "../../../ui/icons";
+import { ANNOTATION_ROOT_ATTRIBUTE, type OpenAnnotation } from "./annotation-markers";
+import { rangeToOffsets } from "./text-offsets";
+import type { TranscriptAnnotations } from "./use-transcript-annotations";
+
+interface TranscriptSelection {
+  readonly messageIds: readonly string[];
+  readonly start: number;
+  readonly end: number;
+  readonly anchorText: string;
+  readonly quote: string;
+  readonly rect: DOMRect;
+}
+
+function isSameSelection(a: TranscriptSelection | null, b: TranscriptSelection | null): boolean {
+  return (
+    a === b ||
+    (a !== null &&
+      b !== null &&
+      a.messageIds[0] === b.messageIds[0] &&
+      a.start === b.start &&
+      a.end === b.end &&
+      a.rect.top === b.rect.top &&
+      a.rect.left === b.rect.left)
+  );
+}
+
+interface OpenEditor {
+  readonly id: string;
+  readonly anchor: DOMRect;
+}
+
+function shortcutKeys(platform: NodeJS.Platform, key: string): readonly string[] {
+  return platform === "darwin" ? ["⌘", key] : ["Ctrl", key];
+}
+
+export function addToChatShortcutKeys(platform: NodeJS.Platform): readonly string[] {
+  return shortcutKeys(platform, "L");
+}
+
+function isAddToChatShortcut(event: KeyboardEvent, platform: NodeJS.Platform): boolean {
+  const modifier = platform === "darwin" ? event.metaKey && !event.ctrlKey : event.ctrlKey;
+  return (
+    modifier &&
+    !event.altKey &&
+    !event.shiftKey &&
+    (event.key.toLowerCase() === "l" || event.code === "KeyL")
+  );
+}
+
+function elementOf(node: Node): Element | null {
+  return node instanceof Element ? node : node.parentElement;
+}
+
+// Buttons, markers and the Working line around message text: a drag that runs onto them
+// still means the text.
+const ROW_CHROME = ".timeline-item__actions, .annotation-markers, .timeline-working";
+
+/** Whether `range` covers any text a reader would take as content, not row chrome. */
+function coversContent(range: Range): boolean {
+  if (range.collapsed) return false;
+  const walker = document.createTreeWalker(range.commonAncestorContainer, NodeFilter.SHOW_TEXT);
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    if (!range.intersectsNode(node) || elementOf(node)?.closest(ROW_CHROME)) continue;
+    const text = node.nodeValue ?? "";
+    const from = node === range.startContainer ? range.startOffset : 0;
+    const to = node === range.endContainer ? range.endOffset : text.length;
+    if (text.slice(from, to).trim()) return true;
+  }
+  return false;
+}
+
+/**
+ * A non-empty selection of one message's text in this timeline pane: the message where the
+ * drag began. Running past its first or last line (onto the gap between rows, a Fork
+ * button or the Working line) still selects just that message; any other text makes it a
+ * different selection.
+ */
+function readTranscriptSelection(pane: HTMLElement): TranscriptSelection | null {
+  const selection = window.getSelection();
+  if (!selection?.anchorNode || selection.rangeCount === 0 || selection.isCollapsed) return null;
+  const root = elementOf(selection.anchorNode)?.closest(`[${ANNOTATION_ROOT_ATTRIBUTE}]`);
+  const row = root?.closest<HTMLElement>("[data-message-id]");
+  const messageId = row?.dataset.messageId;
+  if (!root || !row || !messageId || !pane.contains(root)) return null;
+  let range = selection.getRangeAt(0);
+  const clampStart = !root.contains(range.startContainer);
+  const clampEnd = !root.contains(range.endContainer);
+  if (clampStart) {
+    const before = range.cloneRange();
+    before.setEnd(root, 0);
+    if (coversContent(before)) return null;
+  }
+  if (clampEnd) {
+    const after = range.cloneRange();
+    after.setStart(root, root.childNodes.length);
+    if (coversContent(after)) return null;
+  }
+  if (clampStart || clampEnd) {
+    range = range.cloneRange();
+    if (clampStart) range.setStart(root, 0);
+    if (clampEnd) range.setEnd(root, root.childNodes.length);
+  }
+  const quote = (clampStart || clampEnd ? range.toString() : selection.toString()).trim();
+  if (!quote) return null;
+  const { start, end } = rangeToOffsets(root, range);
+  const sourceMessageId = row.dataset.sourceMessageId;
+  return {
+    messageIds:
+      sourceMessageId && sourceMessageId !== messageId ? [messageId, sourceMessageId] : [messageId],
+    start,
+    end,
+    anchorText: range.toString(),
+    quote,
+    rect: range.getBoundingClientRect(),
+  };
+}
+
+function isTextEntry(element: Element | null): boolean {
+  return (
+    element instanceof HTMLInputElement ||
+    element instanceof HTMLTextAreaElement ||
+    (element instanceof HTMLElement && element.isContentEditable)
+  );
+}
+
+const POPOVER_GAP = 8;
+
+function popoverTop(anchor: DOMRect, height: number): number {
+  const above = anchor.top - height - POPOVER_GAP;
+  return above >= POPOVER_GAP ? above : anchor.bottom + POPOVER_GAP;
+}
+
+/** Starts at `preferred` but stays inside the window's right edge, then its left edge. */
+function popoverLeft(preferred: number, width: number): number {
+  return Math.max(POPOVER_GAP, Math.min(preferred, window.innerWidth - width - POPOVER_GAP));
+}
+
+/**
+ * The Copy and "Add to Chat" buttons over a transcript selection, and the comment box that opens
+ * when an annotation is added or its marker is clicked.
+ */
+export function useAnnotationSelection({
+  paneRef,
+  annotations,
+  platform,
+}: {
+  readonly paneRef: { readonly current: HTMLElement | null };
+  readonly annotations: TranscriptAnnotations | undefined;
+  readonly platform: NodeJS.Platform;
+}) {
+  const [selection, setSelection] = useState<TranscriptSelection | null>(null);
+  const [editor, setEditor] = useState<OpenEditor | null>(null);
+  const pointerDownRef = useRef(false);
+
+  const snapEditorToMarker = useCallback(
+    () =>
+      setEditor((current) => {
+        const marker = current
+          ? paneRef.current?.querySelector(`[data-annotation-id="${current.id}"]`)
+          : null;
+        if (!current || !marker) return current;
+        const anchor = marker.getBoundingClientRect();
+        return anchor.top === current.anchor.top && anchor.left === current.anchor.left
+          ? current
+          : { ...current, anchor };
+      }),
+    [paneRef],
+  );
+
+  useEffect(() => {
+    if (!annotations) return undefined;
+    const refresh = () => {
+      const pane = paneRef.current;
+      const next = pane && !pointerDownRef.current ? readTranscriptSelection(pane) : null;
+      setSelection((current) => (isSameSelection(current, next) ? current : next));
+    };
+    // The button and comment box follow the transcript while it scrolls or streams.
+    const followMarker = (event: Event) => {
+      if (!(event.target instanceof Node) || !paneRef.current?.contains(event.target)) return;
+      refresh();
+      snapEditorToMarker();
+    };
+    const onPointerDown = (event: PointerEvent) => {
+      if (event.target instanceof Element && event.target.closest(".annotation-popover")) return;
+      pointerDownRef.current = true;
+      setSelection(null);
+    };
+    const onPointerUp = () => {
+      pointerDownRef.current = false;
+      // The selection settles after pointerup.
+      requestAnimationFrame(refresh);
+    };
+    document.addEventListener("selectionchange", refresh);
+    document.addEventListener("pointerdown", onPointerDown, true);
+    document.addEventListener("pointerup", onPointerUp, true);
+    document.addEventListener("scroll", followMarker, true);
+    return () => {
+      document.removeEventListener("selectionchange", refresh);
+      document.removeEventListener("pointerdown", onPointerDown, true);
+      document.removeEventListener("pointerup", onPointerUp, true);
+      document.removeEventListener("scroll", followMarker, true);
+    };
+  }, [annotations, paneRef, snapEditorToMarker]);
+
+  const addSelection = useCallback(() => {
+    if (!annotations || !selection) return;
+    const id = annotations.add({
+      messageIds: selection.messageIds,
+      start: selection.start,
+      end: selection.end,
+      anchorText: selection.anchorText,
+      quote: selection.quote,
+    });
+    window.getSelection()?.removeAllRanges();
+    setSelection(null);
+    setEditor({ id, anchor: selection.rect });
+  }, [annotations, selection]);
+
+  useEffect(() => {
+    if (!selection) return undefined;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!isAddToChatShortcut(event, platform) || event.repeat || event.defaultPrevented) return;
+      // Typing elsewhere (composer, terminal, search) keeps its own Ctrl+L.
+      const active = document.activeElement;
+      if (isTextEntry(active) && !active?.closest(".annotation-popover")) return;
+      if (active?.closest("[data-pi-terminal]")) return;
+      event.preventDefault();
+      addSelection();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [addSelection, platform, selection]);
+
+  // A new annotation's marker is placed a frame after the add; the box then sits above it.
+  const editorId = editor?.id;
+  useEffect(() => {
+    if (!editorId) return undefined;
+    const frame = requestAnimationFrame(snapEditorToMarker);
+    return () => cancelAnimationFrame(frame);
+  }, [editorId, snapEditorToMarker]);
+
+  const openAnnotation: OpenAnnotation = useCallback((id, anchor) => {
+    setSelection(null);
+    setEditor({ id, anchor });
+  }, []);
+
+  const editing = editor ? annotations?.list.find((entry) => entry.id === editor.id) : undefined;
+  const editorOrphaned = editor !== null && !editing;
+  useEffect(() => {
+    if (editorOrphaned) setEditor(null);
+  }, [editorOrphaned]);
+  const layer = (
+    <>
+      {selection && !editor ? (
+        <SelectionActions
+          anchor={selection.rect}
+          // A different selection starts without the "Copied" confirmation.
+          key={selection.quote}
+          platform={platform}
+          quote={selection.quote}
+          onAdd={addSelection}
+        />
+      ) : null}
+      {editor && editing && annotations ? (
+        <AnnotationEditor
+          anchor={editor.anchor}
+          key={editor.id}
+          note={editing.note}
+          onClose={() => setEditor(null)}
+          onRemove={() => {
+            annotations.remove(editor.id);
+            setEditor(null);
+          }}
+          onSave={(note) => annotations.setNote(editor.id, note)}
+        />
+      ) : null}
+    </>
+  );
+  return { layer, openAnnotation };
+}
+
+const COPIED_FEEDBACK_MS = 1200;
+
+function SelectionActions({
+  anchor,
+  platform,
+  quote,
+  onAdd,
+}: {
+  readonly anchor: DOMRect;
+  readonly platform: NodeJS.Platform;
+  readonly quote: string;
+  readonly onAdd: () => void;
+}) {
+  // Bumped on each successful copy, so a repeat copy restarts the confirmation.
+  const { t } = useTranslation();
+  const [copyCount, setCopyCount] = useState(0);
+  const [copied, setCopied] = useState(false);
+  const popoverRef = useRef<HTMLDivElement>(null);
+  // The pill is wide enough to run off the right edge, so measure it (the label changes its
+  // width) and place it before it paints.
+  const [width, setWidth] = useState(0);
+  useLayoutEffect(() => {
+    setWidth(popoverRef.current?.getBoundingClientRect().width ?? 0);
+  }, [copied]);
+  useEffect(() => {
+    if (copyCount === 0) return undefined;
+    setCopied(true);
+    const timer = window.setTimeout(() => setCopied(false), COPIED_FEEDBACK_MS);
+    return () => window.clearTimeout(timer);
+  }, [copyCount]);
+
+  const copy = () => {
+    navigator.clipboard.writeText(quote).then(
+      () => setCopyCount((count) => count + 1),
+      (error: unknown) => console.error("[renderer] navigator.clipboard.writeText failed", error),
+    );
+  };
+
+  return (
+    <div
+      className="annotation-popover annotation-add"
+      ref={popoverRef}
+      style={{ top: popoverTop(anchor, 32), left: popoverLeft(anchor.left, width) }}
+      // Keep the transcript selection alive through a click on either button.
+      onMouseDown={(event) => event.preventDefault()}
+    >
+      <button
+        className="annotation-add__button"
+        data-testid="copy-selection"
+        type="button"
+        onClick={copy}
+      >
+        <span>{copied ? t("annotations.copied") : t("annotations.copy")}</span>
+        <ShortcutKeys keys={shortcutKeys(platform, "C")} />
+      </button>
+      <span className="annotation-add__divider" aria-hidden="true" />
+      <button
+        className="annotation-add__button"
+        data-testid="add-to-chat"
+        type="button"
+        onClick={onAdd}
+      >
+        <span>{t("annotations.addToChat")}</span>
+        <ShortcutKeys keys={addToChatShortcutKeys(platform)} />
+      </button>
+    </div>
+  );
+}
+
+function ShortcutKeys({ keys }: { readonly keys: readonly string[] }) {
+  return (
+    <span className="annotation-add__keys" aria-hidden="true">
+      {keys.map((key) => (
+        <kbd key={key}>{key}</kbd>
+      ))}
+    </span>
+  );
+}
+
+function AnnotationEditor({
+  anchor,
+  note,
+  onSave,
+  onRemove,
+  onClose,
+}: {
+  readonly anchor: DOMRect;
+  readonly note: string;
+  readonly onSave: (note: string) => void;
+  readonly onRemove: () => void;
+  readonly onClose: () => void;
+}) {
+  const { t } = useTranslation();
+  const [value, setValue] = useState(note);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const closingRef = useRef(false);
+  const pendingSaveRef = useRef(() => onSave(value.trim()));
+  pendingSaveRef.current = () => onSave(value.trim());
+
+  useEffect(() => {
+    inputRef.current?.focus();
+    // Opening another marker replaces this box without a blur; keep what was typed.
+    return () => {
+      if (!closingRef.current) pendingSaveRef.current();
+    };
+  }, []);
+
+  const finish = (save: boolean) => {
+    if (closingRef.current) return;
+    closingRef.current = true;
+    if (save) onSave(value.trim());
+    onClose();
+  };
+
+  return (
+    <div
+      className="annotation-popover annotation-editor"
+      data-testid="annotation-editor"
+      style={{ top: popoverTop(anchor, 44), left: Math.max(POPOVER_GAP, anchor.left - 24) }}
+    >
+      <input
+        aria-label={t("annotations.commentLabel")}
+        className="annotation-editor__input"
+        placeholder={t("annotations.commentPlaceholder")}
+        ref={inputRef}
+        value={value}
+        onBlur={() => finish(true)}
+        onChange={(event) => setValue(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" && !event.nativeEvent.isComposing) {
+            event.preventDefault();
+            finish(true);
+          } else if (event.key === "Escape") {
+            event.preventDefault();
+            event.stopPropagation();
+            finish(false);
+          }
+        }}
+      />
+      <button
+        aria-label={t("annotations.removeLabel")}
+        className="annotation-editor__remove"
+        data-testid="annotation-remove"
+        title={t("annotations.removeLabel")}
+        type="button"
+        onMouseDown={(event) => event.preventDefault()}
+        onClick={() => {
+          closingRef.current = true;
+          onRemove();
+        }}
+      >
+        <CloseIcon />
+      </button>
+    </div>
+  );
+}

@@ -1,0 +1,450 @@
+import { expect, test } from "@playwright/test";
+import type { Dispatch, SetStateAction } from "react";
+import {
+  classifyHydrationFailure,
+  deriveDesktopAppView,
+  initialDesktopHydrationModel,
+  reduceDesktopHydration,
+  retryableHydrationTargets,
+  updateSnapshot,
+  type DesktopHydrationModel,
+} from "../../src/app/desktop-app-state";
+import {
+  applySelectedTranscriptPatch,
+  createEmptyDesktopAppState,
+  selectedTranscriptPatch,
+  type DesktopAppState,
+  type SelectedTranscriptPatch,
+  type SelectedTranscriptRecord,
+} from "../../contracts/desktop-state";
+import type { TranscriptMessage } from "../../contracts/timeline-types";
+
+const SENTINEL = "secret-token=/private/path";
+
+function stateHarness(initial: DesktopAppState) {
+  let state: DesktopAppState | null = initial;
+  const setState: Dispatch<SetStateAction<DesktopAppState | null>> = (update) => {
+    state = typeof update === "function" ? update(state) : update;
+  };
+  return { setState, read: () => state };
+}
+
+function snapshot(revision: number, extra: Partial<DesktopAppState> = {}): DesktopAppState {
+  return { ...createEmptyDesktopAppState(), revision, ...extra };
+}
+
+function reduceAll(
+  events: Parameters<typeof reduceDesktopHydration>[1][],
+  start: DesktopHydrationModel = initialDesktopHydrationModel(),
+): DesktopHydrationModel {
+  return events.reduce((current, event) => reduceDesktopHydration(current, event), start);
+}
+
+test("failed snapshot actions preserve the draft and reject before success handlers run", async () => {
+  const initial = { ...createEmptyDesktopAppState(), revision: 7, composerDraft: "unsent draft" };
+  const state = stateHarness(initial);
+  const failure = new Error("Session unavailable");
+  let ranSuccessHandler = false;
+  const action = updateSnapshot(state.setState, () => Promise.reject(failure)).then(() => {
+    ranSuccessHandler = true;
+  });
+
+  await expect(action).rejects.toBe(failure);
+  expect(ranSuccessHandler).toBe(false);
+  expect(state.read()).toEqual({ ...initial, lastError: "Session unavailable" });
+});
+
+test("successful actions apply fresh snapshots without replacing newer pushed state", async () => {
+  const initial = { ...createEmptyDesktopAppState(), revision: 7, composerDraft: "initial" };
+  const state = stateHarness(initial);
+  const fresh = { ...initial, revision: 8, composerDraft: "saved" };
+  await expect(updateSnapshot(state.setState, () => Promise.resolve(fresh))).resolves.toBe(fresh);
+  expect(state.read()).toBe(fresh);
+
+  const pushed = { ...fresh, revision: 10, composerDraft: "newer pushed draft" };
+  state.setState(pushed);
+  const stale = { ...fresh, revision: 9, composerDraft: "stale response" };
+  await updateSnapshot(state.setState, () => Promise.resolve(stale));
+  expect(state.read()).toBe(pushed);
+});
+
+test("classifyHydrationFailure keeps only the capability code", () => {
+  const stateFailure = classifyHydrationFailure("state", new Error(SENTINEL));
+  const transcriptFailure = classifyHydrationFailure("selected-transcript", new Error(SENTINEL));
+
+  expect(stateFailure).toEqual({ code: "state-request-failed" });
+  expect(transcriptFailure).toEqual({ code: "selected-transcript-request-failed" });
+  expect(JSON.stringify(stateFailure)).not.toContain("secret");
+  expect(JSON.stringify(transcriptFailure)).not.toContain("secret");
+  expect(JSON.stringify(stateFailure)).not.toContain("/private/path");
+});
+
+test("a successful state pull is ready even when the transcript pull fails", () => {
+  const diagnostics = [{ scope: "workspace" as const, message: "workspace missing" }];
+  const state = snapshot(4, { startupDiagnostics: diagnostics });
+  const model = reduceAll([
+    { type: "state-pull-started", attemptId: 1 },
+    { type: "transcript-pull-started", attemptId: 2 },
+    { type: "transcript-pull-failed", attemptId: 2 },
+    { type: "state-pull-succeeded", attemptId: 1, state },
+  ]);
+  const view = deriveDesktopAppView(model);
+
+  expect(view).toEqual({
+    kind: "ready",
+    snapshot: state,
+    transcript: {
+      kind: "failed",
+      failure: { code: "selected-transcript-request-failed" },
+      retrying: false,
+    },
+  });
+  expect(view.kind === "ready" ? view.snapshot.startupDiagnostics : null).toBe(diagnostics);
+});
+
+test("a failed state pull does not block a later ready shell after the transcript already settled", () => {
+  const record: SelectedTranscriptRecord = {
+    workspaceId: "ws",
+    sessionId: "s",
+    transcript: [],
+  };
+  const recovered = snapshot(2);
+  let model = reduceAll([
+    { type: "state-pull-started", attemptId: 1 },
+    { type: "transcript-pull-started", attemptId: 2 },
+    { type: "state-pull-failed", attemptId: 1 },
+    { type: "transcript-pull-succeeded", attemptId: 2, record },
+  ]);
+
+  expect(deriveDesktopAppView(model)).toEqual({
+    kind: "failed",
+    failure: { code: "state-request-failed" },
+    retrying: false,
+  });
+  expect(model.transcriptRecord).toBe(record);
+
+  model = reduceAll(
+    [
+      { type: "state-pull-started", attemptId: 3 },
+      { type: "state-pull-succeeded", attemptId: 3, state: recovered },
+    ],
+    model,
+  );
+  const view = deriveDesktopAppView(model);
+  expect(view.kind).toBe("ready");
+  if (view.kind === "ready") {
+    expect(view.snapshot).toBe(recovered);
+    expect(view.transcript).toEqual({ kind: "ready", record });
+  }
+});
+
+test("retryableHydrationTargets skip in-flight lanes and a missing bridge", () => {
+  const inFlight = reduceAll([
+    { type: "state-pull-started", attemptId: 1 },
+    { type: "transcript-pull-started", attemptId: 2 },
+  ]);
+  expect(retryableHydrationTargets(inFlight)).toEqual([]);
+
+  const failedState = reduceDesktopHydration(inFlight, {
+    type: "state-pull-failed",
+    attemptId: 1,
+  });
+  expect(retryableHydrationTargets(failedState)).toEqual(["state"]);
+
+  const bothFailed = reduceDesktopHydration(failedState, {
+    type: "transcript-pull-failed",
+    attemptId: 2,
+  });
+  expect(retryableHydrationTargets(bothFailed).slice().sort()).toEqual([
+    "selected-transcript",
+    "state",
+  ]);
+
+  const bridgeless = reduceDesktopHydration(bothFailed, { type: "bridge-missing" });
+  expect(retryableHydrationTargets(bridgeless)).toEqual([]);
+  expect(deriveDesktopAppView(bridgeless)).toEqual({
+    kind: "failed",
+    failure: { code: "bridge-unavailable" },
+    retrying: false,
+  });
+});
+
+test("stale pull attempts and older revisions do not replace live state", () => {
+  const first = snapshot(3);
+  const pushed = snapshot(5, { composerDraft: "from push" });
+  const stale = snapshot(4, { composerDraft: "stale pull" });
+  const model = reduceAll([
+    { type: "state-pull-started", attemptId: 1 },
+    { type: "state-pull-started", attemptId: 2 },
+    { type: "state-pull-succeeded", attemptId: 1, state: first },
+    { type: "state-pushed", state: pushed },
+    { type: "state-pull-succeeded", attemptId: 2, state: stale },
+  ]);
+
+  expect(model.stateInFlightId).toBeNull();
+  expect(model.liveSnapshot).toBe(pushed);
+  expect(deriveDesktopAppView(model).kind).toBe("ready");
+});
+
+test("a transcript push after pull start wins over the later pull result", () => {
+  const pushed: SelectedTranscriptRecord = {
+    workspaceId: "ws",
+    sessionId: "live",
+    transcript: [],
+  };
+  const pulled: SelectedTranscriptRecord = {
+    workspaceId: "ws",
+    sessionId: "stale",
+    transcript: [],
+  };
+  const model = reduceAll([
+    { type: "transcript-pull-started", attemptId: 1 },
+    { type: "transcript-pushed", record: pushed },
+    { type: "transcript-pull-succeeded", attemptId: 1, record: pulled },
+  ]);
+
+  expect(model.transcriptRecord).toBe(pushed);
+  expect(deriveDesktopAppView(model)).toMatchObject({
+    kind: "loading",
+  });
+  const ready = reduceDesktopHydration(model, {
+    type: "state-pushed",
+    state: snapshot(1),
+  });
+  expect(deriveDesktopAppView(ready)).toEqual({
+    kind: "ready",
+    snapshot: snapshot(1),
+    transcript: { kind: "ready", record: pushed },
+  });
+});
+
+test("a failed state pull does not clear a snapshot that a push already provided", () => {
+  const live = snapshot(8, { composerDraft: "keep me" });
+  const model = reduceAll([
+    { type: "state-pushed", state: live },
+    { type: "state-pull-started", attemptId: 1 },
+    { type: "state-pull-failed", attemptId: 1 },
+  ]);
+
+  expect(model.stateFailed).toBe(false);
+  expect(deriveDesktopAppView(model)).toEqual({
+    kind: "ready",
+    snapshot: live,
+    transcript: { kind: "loading" },
+  });
+  expect(retryableHydrationTargets(model)).toEqual(["selected-transcript"]);
+});
+
+test("a late transcript pull failure does not hide a pushed transcript", () => {
+  const pushed: SelectedTranscriptRecord = {
+    workspaceId: "ws",
+    sessionId: "live",
+    transcript: [],
+  };
+  const live = snapshot(1, { selectedWorkspaceId: "ws", selectedSessionId: "live" });
+  const model = reduceAll([
+    { type: "state-pushed", state: live },
+    { type: "transcript-pull-started", attemptId: 1 },
+    { type: "transcript-pushed", record: pushed },
+    { type: "transcript-pull-failed", attemptId: 1 },
+  ]);
+
+  expect(model.transcriptRecord).toBe(pushed);
+  expect(model.transcriptFailed).toBe(false);
+  expect(deriveDesktopAppView(model)).toEqual({
+    kind: "ready",
+    snapshot: live,
+    transcript: { kind: "ready", record: pushed },
+  });
+  expect(retryableHydrationTargets(model)).toEqual([]);
+});
+
+test("switching sessions clears a transcript failure for the previous thread", () => {
+  const first = snapshot(1, { selectedWorkspaceId: "ws", selectedSessionId: "a" });
+  const next = snapshot(2, { selectedWorkspaceId: "ws", selectedSessionId: "b" });
+  let model = reduceAll([
+    { type: "state-pushed", state: first },
+    { type: "transcript-pull-started", attemptId: 1 },
+    { type: "transcript-pull-failed", attemptId: 1 },
+  ]);
+
+  expect(deriveDesktopAppView(model)).toEqual({
+    kind: "ready",
+    snapshot: first,
+    transcript: {
+      kind: "failed",
+      failure: { code: "selected-transcript-request-failed" },
+      retrying: false,
+    },
+  });
+
+  model = reduceDesktopHydration(model, { type: "state-patched", snapshot: next });
+  expect(model.transcriptFailed).toBe(false);
+  expect(model.transcriptRecord).toBeNull();
+  expect(model.transcriptInFlightId).toBeNull();
+  expect(deriveDesktopAppView(model)).toEqual({
+    kind: "ready",
+    snapshot: next,
+    transcript: { kind: "loading" },
+  });
+
+  model = reduceDesktopHydration(model, { type: "transcript-pull-failed", attemptId: 1 });
+  expect(deriveDesktopAppView(model)).toEqual({
+    kind: "ready",
+    snapshot: next,
+    transcript: { kind: "loading" },
+  });
+
+  const pushed: SelectedTranscriptRecord = {
+    workspaceId: "ws",
+    sessionId: "b",
+    transcript: [],
+  };
+  model = reduceDesktopHydration(model, { type: "transcript-pushed", record: pushed });
+  expect(deriveDesktopAppView(model)).toEqual({
+    kind: "ready",
+    snapshot: next,
+    transcript: { kind: "ready", record: pushed },
+  });
+});
+
+test("a session switch keeps a transcript that already matches the new selection", () => {
+  const first = snapshot(1, { selectedWorkspaceId: "ws", selectedSessionId: "a" });
+  const next = snapshot(2, { selectedWorkspaceId: "ws", selectedSessionId: "b" });
+  const record: SelectedTranscriptRecord = {
+    workspaceId: "ws",
+    sessionId: "b",
+    transcript: [],
+  };
+  const model = reduceAll([
+    { type: "state-pushed", state: first },
+    { type: "transcript-pushed", record },
+    { type: "state-pushed", state: next },
+  ]);
+
+  expect(model.transcriptInFlightId).toBeNull();
+  expect(deriveDesktopAppView(model)).toEqual({
+    kind: "ready",
+    snapshot: next,
+    transcript: { kind: "ready", record },
+  });
+});
+
+test("a transcript patch carries only the changed rows and rebuilds the same transcript", () => {
+  const row = (id: string, text = id): TranscriptMessage => ({
+    kind: "message",
+    id,
+    role: "assistant",
+    text,
+    createdAt: "2026-10-13T12:00:00.000Z",
+  });
+  const record = (transcript: TranscriptMessage[]): SelectedTranscriptRecord => ({
+    workspaceId: "ws",
+    sessionId: "live",
+    transcript,
+  });
+  const rows = Array.from({ length: 1000 }, (_, index) => row(`r${index}`));
+  const replaced = [...rows];
+  replaced[500] = row("r500", "finished");
+  const steps = [
+    record(rows),
+    record(replaced),
+    record([...replaced, row("new")]),
+    record([row("x"), ...replaced.slice(2, 10)]),
+    record([]),
+    record(rows),
+  ];
+
+  const one = selectedTranscriptPatch(steps[0]!, steps[1]!);
+  expect(one).toMatchObject({ start: 500, deleteCount: 1 });
+  expect(one?.rows).toEqual([row("r500", "finished")]);
+
+  let held: SelectedTranscriptRecord | null = steps[0]!;
+  for (const next of steps.slice(1)) {
+    // IPC structured-clones the patch, so the renderer never shares main's row objects.
+    const patch: SelectedTranscriptPatch = structuredClone(selectedTranscriptPatch(held!, next)!);
+    held = applySelectedTranscriptPatch(held, patch) ?? null;
+    expect(held).toEqual(next);
+  }
+
+  // A different thread, or a patch that does not fit, needs the whole transcript.
+  expect(selectedTranscriptPatch(record(rows), { ...record(rows), sessionId: "other" })).toBe(
+    undefined,
+  );
+  const tooFar = {
+    workspaceId: "ws",
+    sessionId: "live",
+    baseLength: 1,
+    start: 5,
+    deleteCount: 1,
+    rows: [],
+  };
+  expect(applySelectedTranscriptPatch(record([row("a")]), tooFar)).toBe(undefined);
+  expect(applySelectedTranscriptPatch(null, tooFar)).toBe(undefined);
+  // A patch made against a transcript of another length does not fit, even when its range does.
+  const otherBase = selectedTranscriptPatch(record([row("a"), row("b")]), record([row("a")]))!;
+  expect(applySelectedTranscriptPatch(record([row("a"), row("b")]), otherBase)).toEqual(
+    record([row("a")]),
+  );
+  expect(applySelectedTranscriptPatch(record([row("a"), row("b"), row("c")]), otherBase)).toBe(
+    undefined,
+  );
+});
+
+test("an extension UI update patches only that session's UI and ignores stale ones", () => {
+  const ui = (title: string) => ({
+    instanceId: "instance",
+    statuses: [],
+    widgets: [],
+    pendingDialogs: [],
+    notices: [],
+    title,
+  });
+  const base = snapshot(5, { sessionExtensionUiBySession: { "w:other": ui("other") } });
+  const ready = reduceAll([{ type: "state-pushed", state: base }]);
+
+  const patched = reduceDesktopHydration(ready, {
+    type: "extension-ui-pushed",
+    update: { sessionKey: "w:s", ui: ui("Spinner 1"), revision: 6 },
+  });
+  expect(patched.liveSnapshot?.revision).toBe(6);
+  expect(patched.liveSnapshot?.sessionExtensionUiBySession["w:s"]?.title).toBe("Spinner 1");
+  expect(patched.liveSnapshot?.sessionExtensionUiBySession["w:other"]).toBe(
+    base.sessionExtensionUiBySession["w:other"],
+  );
+  expect(patched.liveSnapshot?.workspaces).toBe(base.workspaces);
+
+  const stale = reduceDesktopHydration(patched, {
+    type: "extension-ui-pushed",
+    update: { sessionKey: "w:s", ui: ui("Spinner 0"), revision: 5 },
+  });
+  expect(stale).toBe(patched);
+
+  const beforeState = reduceDesktopHydration(initialDesktopHydrationModel(), {
+    type: "extension-ui-pushed",
+    update: { sessionKey: "w:s", ui: ui("Spinner 1"), revision: 6 },
+  });
+  expect(beforeState.liveSnapshot).toBeNull();
+});
+
+test("a state push without the model catalog keeps the catalog the window has", () => {
+  const runtimeByWorkspace = { ws: {} } as unknown as DesktopAppState["runtimeByWorkspace"];
+  const first = snapshot(1, { runtimeByWorkspace });
+  const { runtimeByWorkspace: _omitted, ...withoutCatalog } = snapshot(2, {
+    composerDraft: "next",
+  });
+
+  // Before the window has any state, such a push is ignored: the state pull brings it all.
+  expect(reduceAll([{ type: "state-pushed", state: withoutCatalog }]).liveSnapshot).toBeNull();
+
+  const model = reduceAll([
+    { type: "state-pushed", state: first },
+    { type: "state-pushed", state: withoutCatalog },
+  ]);
+  expect(model.liveSnapshot?.composerDraft).toBe("next");
+  expect(model.liveSnapshot?.runtimeByWorkspace).toBe(runtimeByWorkspace);
+
+  const replaced = snapshot(3);
+  const updated = reduceDesktopHydration(model, { type: "state-pushed", state: replaced });
+  expect(updated.liveSnapshot).toBe(replaced);
+});

@@ -1,0 +1,358 @@
+/* =============================================================================
+ * MedTutor "Clean Clinical Editorial" Design Language
+ *
+ * Overrides the Default preset's palette on `body` (leaving :root untouched so
+ * theme-engine preset assertions remain intact) and refines typography, radii,
+ * focus states, sidebar selection, transcript prose/tables, and composer craft.
+ * ========================================================================== */
+
+html:not(.dark)[data-theme-preset="default"] body,
+html:not(.dark):not([data-theme-preset]) body {
+  /* Paper-white canvas & cool-sage sidebar for glare-free textbook reading */
+  --window: #eef3f2;
+  --window-glass: rgba(238, 243, 242, 0.72);
+  --sidebar: #f2f5f4;
+  --sidebar-glass: rgba(242, 245, 244, 0.78);
+  --main: #f9faf9;
+  --main-glass: rgba(249, 250, 249, 0.78);
+  --surface: #ffffff;
+  --surface-glass: rgba(255, 255, 255, 0.86);
+  --surface-muted: #f3f6f5;
+  --surface-muted-glass: rgba(243, 246, 245, 0.78);
+
+  /* Soft cool-grey hairline borders */
+  --line: #dfe6e4;
+  --line-glass: rgba(223, 230, 228, 0.55);
+  --line-strong: #c6d2ce;
+  --line-strong-glass: rgba(198, 210, 206, 0.75);
+  --border: var(--line);
+
+  /* Ink & muted hierarchy */
+  --text-strong: #172422;
+  --text: #283735;
+  --ink: var(--text);
+  --ink-strong: var(--text-strong);
+  --muted-strong: #4a5e5a;
+  --muted: #617571;
+  --muted-soft: #788c88;
+  --muted-subtle: #8fa19d;
+  --muted-icon: #647975;
+  --muted-path: #788c88;
+  --muted-settings: #617571;
+
+  /* Medical Teal primary accent */
+  --accent: #0f766e;
+  --accent-tint-bg: rgba(15, 118, 110, 0.08);
+  --accent-tint-bg-strong: rgba(15, 118, 110, 0.14);
+  --accent-tint-border: rgba(15, 118, 110, 0.24);
+  --accent-rail: rgba(15, 118, 110, 0.9);
+  --focus-ring-color: rgba(15, 118, 110, 0.18);
+  --focus-ring: 0 0 0 3px var(--focus-ring-color);
+  --focus-ring-border: rgba(15, 118, 110, 0.52);
+
+  /* Primary buttons in steady Medical Teal instead of flat black */
+  --button-primary-bg: #0f766e;
+  --button-primary-border: #0f766e;
+  --button-primary-ink: #ffffff;
+  --button-primary-hover-bg: #0d645e;
+  --button-primary-hover-border: #0d645e;
+  --button-primary-disabled-bg: #dbe4e1;
+  --button-primary-disabled-border: #dbe4e1;
+  --button-primary-disabled-ink: #8ea09c;
+
+  /* Clinical semantic status colours */
+  --success: #15803d;
+  --success-ink: #166534;
+  --warning: #b45309;
+  --warning-ink: #92400e;
+  --error: #be123c;
+  --error-ink: #9f1239;
+
+  /* Surfaces, code, shadows */
+  --surface-overlay: rgba(15, 36, 33, 0.03);
+  --surface-overlay-hover: rgba(15, 118, 110, 0.06);
+  --surface-overlay-border: rgba(15, 118, 110, 0.16);
+  --surface-overlay-muted: rgba(15, 36, 33, 0.024);
+  --overlay-subtle: rgba(15, 36, 33, 0.035);
+  --overlay-hover: rgba(15, 118, 110, 0.065);
+  --overlay-active: rgba(15, 118, 110, 0.1);
+  --code-inline-bg: #ecf2f0;
+  --code-block-bg: #f3f6f5;
+  --code-ink: #1e312e;
+  --code-border: #dce5e2;
+  --shadow-sm: 0 1px 3px rgba(15, 35, 32, 0.04), 0 1px 2px rgba(15, 35, 32, 0.03);
+  --shadow-md: 0 6px 20px rgba(15, 35, 32, 0.07);
+  --shadow-lg: 0 14px 36px rgba(15, 35, 32, 0.1);
+  --shadow-xl: 0 24px 56px rgba(15, 35, 32, 0.14);
+}
+
+html.dark[data-theme-preset="default"] body,
+html.dark:not([data-theme-preset]) body {
+  /* Deep Slate night-study palette */
+  --window: #0b1214;
+  --window-glass: rgba(11, 18, 20, 0.76);
+  --sidebar: #111a1d;
+  --sidebar-glass: rgba(17, 26, 29, 0.8);
+  --main: #0f171a;
+  --main-glass: rgba(15, 23, 26, 0.8);
+  --surface: #141f23;
+  --surface-glass: rgba(20, 31, 35, 0.86);
+  --surface-muted: #1a282d;
+  --surface-muted-glass: rgba(26, 40, 45, 0.8);
+
+  /* Crisp, low-glare slate borders */
+  --line: #23343a;
+  --line-glass: rgba(35, 52, 58, 0.6);
+  --line-strong: #324850;
+  --line-strong-glass: rgba(50, 72, 80, 0.78);
+  --border: var(--line);
+
+  /* Soft moonlight typography */
+  --text-strong: #e6f0ee;
+  --text: #cddcd9;
+  --ink: var(--text);
+  --ink-strong: var(--text-strong);
+  --muted-strong: #a4b9b5;
+  --muted: #829995;
+  --muted-soft: #6d8480;
+  --muted-subtle: #59706c;
+  --muted-icon: #859c98;
+  --muted-path: #6d8480;
+  --muted-settings: #829995;
+
+  /* High-contrast calming teal accent */
+  --accent: #2dd4bf;
+  --accent-tint-bg: rgba(45, 212, 191, 0.11);
+  --accent-tint-bg-strong: rgba(45, 212, 191, 0.18);
+  --accent-tint-border: rgba(45, 212, 191, 0.28);
+  --accent-rail: rgba(45, 212, 191, 0.9);
+  --focus-ring-color: rgba(45, 212, 191, 0.22);
+  --focus-ring: 0 0 0 3px var(--focus-ring-color);
+  --focus-ring-border: rgba(45, 212, 191, 0.56);
+
+  /* Primary buttons with guaranteed dark ink contrast on teal */
+  --button-primary-bg: #14b8a6;
+  --button-primary-border: #14b8a6;
+  --button-primary-ink: #05221e;
+  --button-primary-hover-bg: #2dd4bf;
+  --button-primary-hover-border: #2dd4bf;
+  --button-primary-disabled-bg: #1d2c31;
+  --button-primary-disabled-border: #26383e;
+  --button-primary-disabled-ink: #607773;
+
+  --success: #34d399;
+  --success-ink: #6ee7b7;
+  --warning: #fbbf24;
+  --warning-ink: #fde68a;
+  --error: #fb7185;
+  --error-ink: #fda4af;
+
+  --surface-overlay: rgba(230, 240, 238, 0.04);
+  --surface-overlay-hover: rgba(45, 212, 191, 0.08);
+  --surface-overlay-border: rgba(45, 212, 191, 0.2);
+  --surface-overlay-muted: rgba(230, 240, 238, 0.025);
+  --overlay-subtle: rgba(230, 240, 238, 0.04);
+  --overlay-hover: rgba(45, 212, 191, 0.08);
+  --overlay-active: rgba(45, 212, 191, 0.13);
+  --code-inline-bg: rgba(45, 212, 191, 0.1);
+  --code-block-bg: #0b1316;
+  --code-ink: #d4e4e1;
+  --code-border: #223238;
+  --shadow-sm: 0 2px 6px rgba(0, 0, 0, 0.28);
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.38);
+  --shadow-lg: 0 16px 44px rgba(0, 0, 0, 0.48);
+  --shadow-xl: 0 28px 68px rgba(0, 0, 0, 0.58);
+}
+
+html.enable-transparency[data-theme-preset="default"] body,
+html.enable-transparency:not([data-theme-preset]) body {
+  --window: transparent;
+  --sidebar: transparent;
+  --main: transparent;
+  --surface: var(--surface-glass);
+  --surface-muted: var(--surface-muted-glass);
+  --line: var(--line-glass);
+  --line-strong: var(--line-strong-glass);
+}
+
+/* ---- Sidebar & Topbar polish -------------------------------------------- */
+
+.sidebar__new {
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  transition:
+    background var(--motion-fast) var(--ease-out),
+    border-color var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out);
+}
+
+.sidebar__new:hover:not(:disabled) {
+  border-color: var(--accent-tint-border);
+  background: var(--surface);
+  color: var(--accent);
+}
+
+.sidebar__nav-item {
+  border-radius: var(--radius-md);
+  transition:
+    background var(--motion-fast) var(--ease-out),
+    border-color var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out);
+}
+
+.sidebar__nav-item:hover:not(.sidebar__nav-item--active) {
+  background: var(--overlay-hover);
+  color: var(--text-strong);
+}
+
+.sidebar__nav-item--active {
+  background: var(--accent-tint-bg);
+  border-color: var(--accent-tint-border);
+  color: var(--accent);
+  font-weight: var(--font-semibold);
+}
+
+.session-row {
+  border-radius: var(--radius-lg);
+  transition:
+    background var(--motion-fast) var(--ease-out),
+    border-color var(--motion-fast) var(--ease-out);
+}
+
+.session-row--active {
+  border-color: var(--accent-tint-border);
+  box-shadow:
+    inset 3px 0 0 var(--accent),
+    var(--shadow-sm);
+}
+
+.session-row--active .session-row__title {
+  font-weight: var(--font-semibold);
+}
+
+.topbar {
+  padding: 0 18px;
+}
+
+.topbar__icon,
+.sidebar-toggle__button {
+  transition:
+    background var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out);
+}
+
+.topbar__icon:hover:not(:disabled),
+.sidebar-toggle__button:hover:not(:disabled) {
+  background: var(--overlay-hover);
+  color: var(--text-strong);
+}
+
+/* ---- Transcript & Medical Prose Readability ----------------------------- */
+
+.timeline-item__bubble {
+  border-radius: var(--radius-2xl);
+  border-color: var(--accent-tint-border);
+  background: color-mix(in srgb, var(--accent) 6%, var(--surface));
+  padding: 12px 16px;
+}
+
+.message__content {
+  line-height: 1.7;
+  gap: 13px;
+}
+
+.message__content h1,
+.message__content h2,
+.message__content h3,
+.message__content h4 {
+  margin: 6px 0 0;
+  color: var(--text-strong);
+  font-weight: var(--font-semibold);
+  letter-spacing: -0.015em;
+  line-height: 1.35;
+}
+
+.message__content h1 {
+  font-size: 18px;
+}
+
+.message__content h2 {
+  font-size: 16px;
+}
+
+.message__content h3 {
+  font-size: 15px;
+}
+
+.message__content blockquote {
+  padding: 8px 14px;
+  border-left: 3px solid var(--accent);
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+  background: var(--accent-tint-bg);
+  color: var(--text);
+}
+
+.message__content hr {
+  border: 0;
+  height: 1px;
+  background: var(--line);
+  margin: 4px 0;
+}
+
+.message__table-scroll {
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--line);
+  background: var(--surface);
+  overflow-x: auto;
+  box-shadow: var(--shadow-sm);
+}
+
+.message__table-scroll table {
+  font-size: 13.5px;
+  line-height: 1.55;
+  border-style: hidden;
+}
+
+.message__table-scroll th,
+.message__table-scroll td {
+  padding: 8px 12px;
+  border-color: var(--line);
+}
+
+.message__table-scroll th {
+  background: var(--surface-muted);
+  color: var(--text-strong);
+}
+
+.message__table-scroll tr:nth-child(even) td {
+  background: color-mix(in srgb, var(--surface-muted) 45%, transparent);
+}
+
+/* ---- Composer Polish ---------------------------------------------------- */
+
+.composer__surface {
+  border-radius: var(--radius-2xl);
+  padding: 14px 14px 12px;
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow-sm);
+}
+
+.composer__surface:focus-within {
+  border-color: var(--focus-ring-border);
+  box-shadow:
+    0 0 0 3px var(--focus-ring-color),
+    var(--shadow-md);
+}
+
+.composer__actions .button--cta-icon {
+  border-radius: var(--radius-lg);
+}
+
+.composer__attach {
+  border-radius: var(--radius-lg);
+}
+
+.composer__attach:hover:not(:disabled) {
+  background: var(--overlay-hover);
+  color: var(--accent);
+}

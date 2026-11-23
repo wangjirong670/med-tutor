@@ -1,0 +1,33 @@
+node_modules/
+.env
+.env.*
+!.env.example
+*.local
+dist/
+coverage/
+# 学习记录属用户数据，不入库（金标用例是内容源，例外放行）
+*.jsonl
+!eval/judge-golden/*.jsonl
+eval/judge-golden/last-run.meter.jsonl
+.DS_Store
+# CLI 的 warn 旁路日志（学习者不该看到）
+*.warn.log
+# 盲标进度属个人填写数据
+*.responses.json
+# 金标逐条缓存（本地可重建）
+eval/judge-golden/.judge-cache.json
+# CLI 会话目录（学习记录属个人数据，含 .state.json / meter.log）
+clients/cli/.sessions/
+
+# 材料原件、模型原响应及学习会话均仅本地保存
+.study/
+
+# 本机工作流状态及用户配置
+.mimosa/
+.zcode/
+/.npmrc
+
+# 桌面端打包输出与临时暂存目录
+dist-desktop/
+release/
+scripts/pi-migration/s07/restore-r2/src/pi-gui/apps/desktop/release/

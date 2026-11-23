@@ -1,0 +1,24 @@
+{
+  "generated_at": "2026-10-20T07:57:46Z",
+  "generator": "skills/med-study-knead/scripts/sync_from_prompt.py",
+  "version_policy": "git history + source sha256; no custom version labels",
+  "sources": [
+    {
+      "id": "quickstart",
+      "source_relpath": "prompts/quickstart.zh.md",
+      "source_sha256": "c9fbb687f4fe1190ecff31464b6b4951dea1fc527bf528943fdafd6acf8af272",
+      "snapshot_relpath": "references/snapshot/quickstart.snapshot.md",
+      "role": "权威 L1 学习向 prompt（红线/证据档位/输出/坏输出）",
+      "bytes": 11587
+    },
+    {
+      "id": "method",
+      "source_relpath": "docs/method.zh.md",
+      "source_sha256": "ccffa34612eef285999ca9d13a720c81e3c483d8619bb1043a639f115dbfd4ae",
+      "snapshot_relpath": "references/snapshot/method.snapshot.md",
+      "role": "双轨纪律（循环/证据纪律/范围切割/勘误）",
+      "bytes": 3644
+    }
+  ],
+  "note": "Snapshot is generated. Authority remains prompts/quickstart.zh.md. Re-run script after prompt edits."
+}

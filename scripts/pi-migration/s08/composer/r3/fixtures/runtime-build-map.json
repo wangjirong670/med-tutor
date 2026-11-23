@@ -1,0 +1,86 @@
+{
+  "checkedR4OwnedFiles": 53,
+  "checkedR2StaticAssets": 13,
+  "sameR2StaticAssets": 12,
+  "rendererModule": "assets/index-DAh_1rR6.js",
+  "files": [
+    {
+      "relative": "runtime/sandbox/gui-entry.cjs",
+      "r2Sha256": "8af4fcac0a2a63a062c849864828c5f5a693267724a1ee3312c2ab4a217da1d7",
+      "sha256": "8af4fcac0a2a63a062c849864828c5f5a693267724a1ee3312c2ab4a217da1d7",
+      "bytes": 3354
+    },
+    {
+      "relative": "runtime/sandbox/method-context.json",
+      "r2Sha256": "915dcb6e5bfdc026c95b19c1c1a1c30e92a2153e41371e454403603b2d0d4331",
+      "sha256": "915dcb6e5bfdc026c95b19c1c1a1c30e92a2153e41371e454403603b2d0d4331",
+      "bytes": 26482
+    },
+    {
+      "relative": "runtime/sandbox/network-guard.mjs",
+      "r2Sha256": "2055e8aefb6fd24547da1ae5c7c36c309f9a17afdf7c9ec10cdaf5d3a7e98c6e",
+      "sha256": "2055e8aefb6fd24547da1ae5c7c36c309f9a17afdf7c9ec10cdaf5d3a7e98c6e",
+      "bytes": 1480
+    },
+    {
+      "relative": "runtime/sandbox/process-probe-guard.mjs",
+      "r2Sha256": "e2603b5dfeb2db2d4c076edb22b935c736cd22b22c1ec15fa1b29b037b8648f4",
+      "sha256": "e2603b5dfeb2db2d4c076edb22b935c736cd22b22c1ec15fa1b29b037b8648f4",
+      "bytes": 914
+    },
+    {
+      "relative": "runtime/sandbox/profile/agent/settings.json",
+      "r2Sha256": "c77057845e92faa1f674af03ff8c40f9cd4d614fa479ec2471575ffe10b31d23",
+      "sha256": "c77057845e92faa1f674af03ff8c40f9cd4d614fa479ec2471575ffe10b31d23",
+      "bytes": 740
+    },
+    {
+      "relative": "runtime/src/pi-gui/apps/desktop/out/main/main.js",
+      "r2Sha256": "c8103d119f7eee1d0dc8084078d1709300448a158397870170ca3473fe9c4014",
+      "sha256": "79650393e43cac5b4a23395bb8e61fbf83b795bc81227f138ceda896525c6f56",
+      "bytes": 1032264
+    },
+    {
+      "relative": "runtime/src/pi-gui/apps/desktop/out/preload/preload.js",
+      "r2Sha256": "693369c09a41b6002408460799ca9ac0ea6c6e9359388bbb0310b749ef8d237b",
+      "sha256": "693369c09a41b6002408460799ca9ac0ea6c6e9359388bbb0310b749ef8d237b",
+      "bytes": 30006
+    },
+    {
+      "relative": "runtime/src/pi-gui/apps/desktop/out/renderer/assets/index-DAh_1rR6.js",
+      "r2Sha256": "df2032aff264727f56854e7d9b2efcc2f3ef37462be261e083ed9c7903c459d3",
+      "sha256": "df2032aff264727f56854e7d9b2efcc2f3ef37462be261e083ed9c7903c459d3",
+      "bytes": 3544779
+    },
+    {
+      "relative": "runtime/src/pi-gui/apps/desktop/out/renderer/assets/index-DwA6bnnh.css",
+      "r2Sha256": "9472edf962493ea304763b37624cf9db1b7e4da73c77fc3f04db60403326d98d",
+      "sha256": "9472edf962493ea304763b37624cf9db1b7e4da73c77fc3f04db60403326d98d",
+      "bytes": 184730
+    },
+    {
+      "relative": "runtime/src/pi-gui/apps/desktop/out/renderer/assets/wasm-DDgzZJey.js",
+      "r2Sha256": "bae38010f6d3671be9e7fa7472f11a09a61d88e31e68ba42be56d7973a97df7f",
+      "sha256": "bae38010f6d3671be9e7fa7472f11a09a61d88e31e68ba42be56d7973a97df7f",
+      "bytes": 622448
+    },
+    {
+      "relative": "runtime/src/pi-gui/apps/desktop/out/renderer/index.html",
+      "r2Sha256": "069d93a87ff5889efea92c97f59197c5fc51cc07d19ebfe05a518cbbcaeb82c9",
+      "sha256": "069d93a87ff5889efea92c97f59197c5fc51cc07d19ebfe05a518cbbcaeb82c9",
+      "bytes": 537
+    },
+    {
+      "relative": "runtime/src/pi-gui/apps/desktop/out/renderer/learning-workbench.js",
+      "r2Sha256": "faee673508f920b2451a0ee98c234aa551d95ff49e5862470a67af6c50288786",
+      "sha256": "faee673508f920b2451a0ee98c234aa551d95ff49e5862470a67af6c50288786",
+      "bytes": 18076
+    },
+    {
+      "relative": "runtime/src/pi-gui/apps/desktop/package.json",
+      "r2Sha256": "d8ad232a2be54afb57c55ead225d63d879a94f75f98cf8b2d2ada75f59767079",
+      "sha256": "d8ad232a2be54afb57c55ead225d63d879a94f75f98cf8b2d2ada75f59767079",
+      "bytes": 17259
+    }
+  ]
+}

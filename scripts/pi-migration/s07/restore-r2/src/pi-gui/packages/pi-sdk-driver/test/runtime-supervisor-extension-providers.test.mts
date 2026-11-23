@@ -1,0 +1,447 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { RuntimeSupervisor } from "../dist/runtime-supervisor.js";
+
+const EXTENSION_PROVIDER = "ext-test-provider";
+const EXTENSION_MODEL = "ext-test-model";
+const JSON_PROVIDER = "json-test-provider";
+const JSON_MODEL = "json-test-model";
+const FILE_PROVIDER = "file-test-provider";
+const FILE_MODEL = "file-test-model";
+
+function extensionSource(
+  providerId: string,
+  modelId: string,
+  baseUrl = "http://localhost:9/v1",
+): string {
+  return `export default async function providerExtension(pi) {
+  pi.registerProvider(${JSON.stringify(providerId)}, {
+    baseUrl: ${JSON.stringify(baseUrl)},
+    apiKey: "test-key",
+    api: "openai-completions",
+    models: [
+      {
+        id: ${JSON.stringify(modelId)},
+        name: ${JSON.stringify(`Model ${modelId}`)},
+        reasoning: false,
+        input: ["text"],
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        contextWindow: 128000,
+        maxTokens: 16384,
+      },
+    ],
+  });
+}
+`;
+}
+
+/** Create a workspace with a project-scoped extension under `<workspace>/.pi/extensions`. */
+async function createProjectWorkspace(
+  root: string,
+  workspaceId: string,
+  providerId: string,
+  modelId: string,
+  baseUrl?: string,
+): Promise<{ workspace: { workspaceId: string; path: string }; extensionPath: string }> {
+  const path = join(root, workspaceId);
+  const extensionPath = join(path, ".pi", "extensions", "provider.ts");
+  await mkdir(join(path, ".pi", "extensions"), { recursive: true });
+  await writeFile(extensionPath, extensionSource(providerId, modelId, baseUrl));
+  return { workspace: { workspaceId, path }, extensionPath };
+}
+
+function providerIds(snapshot: { providers: readonly { id: string }[] }, prefix: string): string[] {
+  return snapshot.providers.map((provider) => provider.id).filter((id) => id.startsWith(prefix));
+}
+
+function modelKeys(
+  snapshot: { models: readonly { providerId: string; modelId: string }[] },
+  prefix: string,
+): string[] {
+  return snapshot.models
+    .filter((model) => model.providerId.startsWith(prefix))
+    .map((model) => `${model.providerId}:${model.modelId}`);
+}
+
+async function createAgentDir(): Promise<{ agentDir: string; workspacePath: string }> {
+  const root = await mkdtemp(join(tmpdir(), "pi-gui-ext-providers-"));
+  const agentDir = join(root, "agent");
+  const workspacePath = join(root, "workspace");
+  await mkdir(agentDir, { recursive: true });
+  await mkdir(workspacePath, { recursive: true });
+  await writeFile(join(agentDir, "auth.json"), "{}");
+  await writeFile(join(agentDir, "settings.json"), JSON.stringify({ packages: [] }));
+  await writeFile(
+    join(agentDir, "models.json"),
+    JSON.stringify({
+      providers: {
+        [JSON_PROVIDER]: {
+          baseUrl: "http://localhost:9/v1",
+          api: "openai-completions",
+          apiKey: "test-key",
+          models: [{ id: JSON_MODEL, input: ["text"] }],
+        },
+      },
+    }),
+  );
+  return { agentDir, workspacePath };
+}
+
+/** An agent dir with no models.json providers, for multi-workspace isolation tests. */
+async function createSharedAgentDir(): Promise<{ root: string; agentDir: string }> {
+  const root = await mkdtemp(join(tmpdir(), "pi-gui-ext-providers-"));
+  const agentDir = join(root, "agent");
+  await mkdir(agentDir, { recursive: true });
+  await writeFile(join(agentDir, "auth.json"), "{}");
+  await writeFile(join(agentDir, "settings.json"), JSON.stringify({ packages: [] }));
+  return { root, agentDir };
+}
+
+function createSupervisor(agentDir: string) {
+  return new RuntimeSupervisor({
+    agentDir,
+    builtinExtensions: [
+      {
+        name: "test-provider",
+        displayName: "Test provider",
+        factory: (pi) => {
+          pi.registerProvider(EXTENSION_PROVIDER, {
+            baseUrl: "http://localhost:9/v1",
+            apiKey: "test-key",
+            api: "openai-completions",
+            models: [
+              {
+                id: EXTENSION_MODEL,
+                name: "Extension Test Model",
+                reasoning: false,
+                input: ["text"],
+                cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+                contextWindow: 128000,
+                maxTokens: 16384,
+              },
+            ],
+          });
+        },
+      },
+    ],
+  });
+}
+
+await test("runtime snapshot includes providers registered by extensions", async () => {
+  const { agentDir, workspacePath } = await createAgentDir();
+  const supervisor = createSupervisor(agentDir);
+  const workspace = { workspaceId: "workspace-1", path: workspacePath };
+
+  const snapshot = await supervisor.getRuntimeSnapshot(workspace);
+
+  assert.ok(
+    snapshot.models.some(
+      (model) => model.providerId === JSON_PROVIDER && model.modelId === JSON_MODEL,
+    ),
+    "models.json provider should be listed",
+  );
+  assert.ok(
+    snapshot.models.some(
+      (model) => model.providerId === EXTENSION_PROVIDER && model.modelId === EXTENSION_MODEL,
+    ),
+    "extension-registered provider should be listed",
+  );
+  assert.ok(
+    snapshot.providers.some((provider) => provider.id === EXTENSION_PROVIDER),
+    "extension-registered provider should appear in the provider list",
+  );
+});
+
+await test("disabling an extension drops the providers it registered", async () => {
+  const { agentDir, workspacePath } = await createAgentDir();
+  const extensionPath = join(agentDir, "extensions", "file-provider.ts");
+  await mkdir(join(agentDir, "extensions"), { recursive: true });
+  await writeFile(
+    extensionPath,
+    `export default async function fileProviderExtension(pi) {
+  pi.registerProvider(${JSON.stringify(FILE_PROVIDER)}, {
+    baseUrl: "http://localhost:9/v1",
+    apiKey: "test-key",
+    api: "openai-completions",
+    models: [
+      {
+        id: ${JSON.stringify(FILE_MODEL)},
+        name: "File Extension Model",
+        reasoning: false,
+        input: ["text"],
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        contextWindow: 128000,
+        maxTokens: 16384,
+      },
+    ],
+  });
+}
+`,
+  );
+
+  const supervisor = new RuntimeSupervisor({ agentDir });
+  const workspace = { workspaceId: "workspace-1", path: workspacePath };
+
+  const enabled = await supervisor.getRuntimeSnapshot(workspace);
+  assert.ok(
+    enabled.models.some(
+      (model) => model.providerId === FILE_PROVIDER && model.modelId === FILE_MODEL,
+    ),
+    "file-based extension provider should be listed while enabled",
+  );
+
+  const disabled = await supervisor.setExtensionEnabled(workspace, extensionPath, false);
+  assert.ok(
+    !disabled.models.some((model) => model.providerId === FILE_PROVIDER),
+    "provider should be dropped once its extension is disabled",
+  );
+});
+
+await test("each workspace only sees providers its own project extensions register", async () => {
+  const { root, agentDir } = await createSharedAgentDir();
+  const a = await createProjectWorkspace(root, "workspace-a", "scoped-a", "model-a");
+  const b = await createProjectWorkspace(root, "workspace-b", "scoped-b", "model-b");
+  const supervisor = new RuntimeSupervisor({ agentDir });
+
+  const firstA = await supervisor.getRuntimeSnapshot(a.workspace);
+  assert.deepEqual(providerIds(firstA, "scoped-"), ["scoped-a"]);
+
+  const snapshotB = await supervisor.getRuntimeSnapshot(b.workspace);
+  assert.deepEqual(
+    providerIds(snapshotB, "scoped-"),
+    ["scoped-b"],
+    "workspace B must not see workspace A's provider",
+  );
+  assert.deepEqual(modelKeys(snapshotB, "scoped-"), ["scoped-b:model-b"]);
+
+  const secondA = await supervisor.getRuntimeSnapshot(a.workspace);
+  assert.deepEqual(
+    providerIds(secondA, "scoped-"),
+    ["scoped-a"],
+    "workspace A must not pick up workspace B's provider after B was opened",
+  );
+  assert.deepEqual(modelKeys(secondA, "scoped-"), ["scoped-a:model-a"]);
+});
+
+await test("the same provider id resolves to each workspace's own configuration", async () => {
+  const { root, agentDir } = await createSharedAgentDir();
+  const a = await createProjectWorkspace(
+    root,
+    "workspace-a",
+    "shared-id",
+    "model-a",
+    "http://localhost:9/a",
+  );
+  const b = await createProjectWorkspace(
+    root,
+    "workspace-b",
+    "shared-id",
+    "model-b",
+    "http://localhost:9/b",
+  );
+  const supervisor = new RuntimeSupervisor({ agentDir });
+
+  await supervisor.getRuntimeSnapshot(a.workspace);
+  const snapshotB = await supervisor.getRuntimeSnapshot(b.workspace);
+  assert.deepEqual(modelKeys(snapshotB, "shared-id"), ["shared-id:model-b"]);
+
+  const secondA = await supervisor.getRuntimeSnapshot(a.workspace);
+  assert.deepEqual(
+    modelKeys(secondA, "shared-id"),
+    ["shared-id:model-a"],
+    "workspace A must keep its own configuration for a provider id workspace B also registers",
+  );
+});
+
+await test("disabling an extension only drops the registrations of that workspace", async () => {
+  const { root, agentDir } = await createSharedAgentDir();
+  const a = await createProjectWorkspace(root, "workspace-a", "scoped-a", "model-a");
+  const b = await createProjectWorkspace(root, "workspace-b", "scoped-b", "model-b");
+  const supervisor = new RuntimeSupervisor({ agentDir });
+
+  await supervisor.getRuntimeSnapshot(a.workspace);
+  await supervisor.getRuntimeSnapshot(b.workspace);
+
+  const disabledA = await supervisor.setExtensionEnabled(a.workspace, a.extensionPath, false);
+  assert.deepEqual(
+    providerIds(disabledA, "scoped-"),
+    [],
+    "workspace A should lose its own provider",
+  );
+
+  const snapshotB = await supervisor.getRuntimeSnapshot(b.workspace);
+  assert.deepEqual(
+    providerIds(snapshotB, "scoped-"),
+    ["scoped-b"],
+    "workspace B should keep its provider when workspace A disables its extension",
+  );
+});
+
+await test("setProviderApiKey persists into a later snapshot as a connected API key", async () => {
+  const previousOpenAiKey = process.env.OPENAI_API_KEY;
+  delete process.env.OPENAI_API_KEY;
+  try {
+    const { agentDir, workspacePath } = await createAgentDir();
+    const supervisor = new RuntimeSupervisor({ agentDir });
+    const workspace = { workspaceId: "workspace-1", path: workspacePath };
+
+    const after = await supervisor.setProviderApiKey(workspace, "openai", "test-openai-key");
+    const openai = after.providers.find((provider) => provider.id === "openai");
+    assert.equal(openai?.hasAuth, true, "OpenAI should be connected after saving an API key");
+    assert.equal(openai?.authSource, "auth_file");
+    assert.equal(openai?.name, "OpenAI");
+  } finally {
+    if (previousOpenAiKey === undefined) {
+      delete process.env.OPENAI_API_KEY;
+    } else {
+      process.env.OPENAI_API_KEY = previousOpenAiKey;
+    }
+  }
+});
+
+await test("Azure, renamed to azure in Pi 1.4, still offers and saves API-key setup", async () => {
+  const previousAzureKey = process.env.AZURE_OPENAI_API_KEY;
+  delete process.env.AZURE_OPENAI_API_KEY;
+  try {
+    const { agentDir, workspacePath } = await createAgentDir();
+    const supervisor = new RuntimeSupervisor({ agentDir });
+    const workspace = { workspaceId: "workspace-1", path: workspacePath };
+
+    const before = await supervisor.getRuntimeSnapshot(workspace);
+    const azure = before.providers.find((provider) => provider.id === "azure");
+    assert.equal(azure?.apiKeySetupSupported, true, "Azure should offer API-key setup");
+    const after = await supervisor.setProviderApiKey(workspace, "azure", "test-azure-key");
+    assert.equal(after.providers.find((provider) => provider.id === "azure")?.hasAuth, true);
+  } finally {
+    if (previousAzureKey === undefined) {
+      delete process.env.AZURE_OPENAI_API_KEY;
+    } else {
+      process.env.AZURE_OPENAI_API_KEY = previousAzureKey;
+    }
+  }
+});
+
+await test("extension providers survive a runtime refresh", async () => {
+  const { agentDir, workspacePath } = await createAgentDir();
+  const supervisor = createSupervisor(agentDir);
+  const workspace = { workspaceId: "workspace-1", path: workspacePath };
+
+  await supervisor.getRuntimeSnapshot(workspace);
+  const refreshed = await supervisor.refreshRuntime(workspace);
+
+  assert.ok(
+    refreshed.models.some(
+      (model) => model.providerId === EXTENSION_PROVIDER && model.modelId === EXTENSION_MODEL,
+    ),
+    "extension-registered provider should still be listed after refreshRuntime",
+  );
+});
+
+await test("built-in single-key providers (deepseek, xiaomi, etc.) support desktop API key setup and exclude multi-step external providers", async () => {
+  const savedEnv = {
+    DEEPSEEK_API_KEY: process.env.DEEPSEEK_API_KEY,
+    XIAOMI_API_KEY: process.env.XIAOMI_API_KEY,
+  };
+  delete process.env.DEEPSEEK_API_KEY;
+  delete process.env.XIAOMI_API_KEY;
+
+  try {
+    const { agentDir, workspacePath } = await createAgentDir();
+    const supervisor = new RuntimeSupervisor({ agentDir });
+    const workspace = { workspaceId: "workspace-1", path: workspacePath };
+
+    const before = await supervisor.getRuntimeSnapshot(workspace);
+    const byId = new Map(before.providers.map((provider) => [provider.id, provider] as const));
+
+    for (const expectedApiKeyId of [
+      "deepseek",
+      "xiaomi",
+      "xiaomi-token-plan-cn",
+      "xiaomi-token-plan-sgp",
+      "xiaomi-token-plan-ams",
+      "moonshotai",
+      "moonshotai-cn",
+      "qwen-token-plan",
+      "qwen-token-plan-cn",
+      "qwen-token-plan-individual",
+      "zai-coding-cn",
+      "ant-ling",
+      "fireworks",
+      "together",
+      "nvidia",
+      "baseten",
+    ]) {
+      assert.equal(
+        byId.get(expectedApiKeyId)?.apiKeySetupSupported,
+        true,
+        `${expectedApiKeyId} should support desktop API-key setup`,
+      );
+    }
+
+    for (const excludedId of [
+      "amazon-bedrock",
+      "google-vertex",
+      "cloudflare-ai-gateway",
+      "cloudflare-workers-ai",
+      "openai-codex",
+    ]) {
+      assert.equal(
+        byId.get(excludedId)?.apiKeySetupSupported,
+        false,
+        `${excludedId} must not offer single API-key desktop setup`,
+      );
+    }
+
+    const afterDeepSeek = await supervisor.setProviderApiKey(
+      workspace,
+      "deepseek",
+      "test-deepseek-key",
+    );
+    const deepseek = afterDeepSeek.providers.find((provider) => provider.id === "deepseek");
+    assert.equal(deepseek?.hasAuth, true);
+    assert.equal(deepseek?.authSource, "auth_file");
+    assert.ok(
+      afterDeepSeek.models.some(
+        (model) => model.providerId === "deepseek" && model.available === true,
+      ),
+      "DeepSeek models should become available after saving an API key",
+    );
+
+    const afterXiaomi = await supervisor.setProviderApiKey(
+      workspace,
+      "xiaomi",
+      "test-xiaomi-key",
+    );
+    const xiaomi = afterXiaomi.providers.find((provider) => provider.id === "xiaomi");
+    assert.equal(xiaomi?.hasAuth, true);
+    assert.equal(xiaomi?.authSource, "auth_file");
+    assert.ok(
+      afterXiaomi.models.some((model) => model.providerId === "xiaomi" && model.available === true),
+      "Xiaomi models should become available after saving an API key",
+    );
+
+    const persistedAuth = JSON.parse(await readFile(join(agentDir, "auth.json"), "utf8")) as Record<
+      string,
+      { type?: string; key?: string }
+    >;
+    assert.deepEqual(persistedAuth.deepseek, { type: "api_key", key: "test-deepseek-key" });
+    assert.deepEqual(persistedAuth.xiaomi, { type: "api_key", key: "test-xiaomi-key" });
+
+    await assert.rejects(
+      () => supervisor.setProviderApiKey(workspace, "amazon-bedrock", "test-bedrock-key"),
+      /API key setup is not supported for amazon-bedrock/,
+    );
+    await assert.rejects(
+      () => supervisor.setProviderApiKey(workspace, "openai-codex", "test-codex-key"),
+      /API key setup is not supported for openai-codex/,
+    );
+  } finally {
+    if (savedEnv.DEEPSEEK_API_KEY === undefined) delete process.env.DEEPSEEK_API_KEY;
+    else process.env.DEEPSEEK_API_KEY = savedEnv.DEEPSEEK_API_KEY;
+    if (savedEnv.XIAOMI_API_KEY === undefined) delete process.env.XIAOMI_API_KEY;
+    else process.env.XIAOMI_API_KEY = savedEnv.XIAOMI_API_KEY;
+  }
+});

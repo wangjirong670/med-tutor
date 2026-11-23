@@ -1,0 +1,22 @@
+--- a/electron/conversation/app-store-composer.ts
++++ b/electron/conversation/app-store-composer.ts
+@@ -515,7 +515,7 @@
+   const isRunning = selectedSession?.status === "running";
+   const editingState = store.getQueuedComposerEditState(sessionRef);
+   const draftRestores = store.conversationState.pendingComposerDraftRestoreBySession;
+-  const draftRestore = !isRunning && !text.startsWith("/") ? Symbol() : undefined;
++  const draftRestore = !text.startsWith("/") ? Symbol() : undefined;
+   if (draftRestore) {
+     // Establish the send's own empty draft before readiness can yield to a
+     // draft acknowledgement or a later edit in this session.
+@@ -567,7 +567,9 @@
+           )
+         : [...store.getQueuedComposerMessages(sessionRef), nextMessage];
+ 
+-      store.conversationState.composerDraftsBySession.delete(key);
++      if (!draftRestore) {
++        store.conversationState.composerDraftsBySession.delete(key);
++      }
+       store.conversationState.composerAttachmentsBySession.delete(key);
+       store.setQueuedComposerEditState(sessionRef, undefined);
+       const nextSessionQueuedMessages = toSessionQueuedMessages(nextQueuedMessages);

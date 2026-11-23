@@ -1,0 +1,3 @@
+import type { Source, DraftContent } from './model.js';
+export const source: Source = { id: 's1', revision: 1, name: '合成笔记', locator: '全文', kind: 'note', text: '甲是红色。乙是蓝色。', sha256: 'test', original: 'originals/test.txt', originalSha256: 'test', method: 'UTF-8', coverage: '文字已导入', uncertainties: ['教材未核对'] };
+export const content: DraftContent = { title: '合成标签', status: '只核笔记', claims: [{ id: 'c1', section: 'backbone', text: '甲对应红色', origin: 'material', citations: [{ sourceId: 's1', revision: 1, quote: '甲是红色' }] }, { id: 'c2', section: 'pitfall', text: '建议按标签查颜色', origin: 'ai', citations: [] }], conflicts: [], uncertainties: ['未核教材'], next: ['请核对'] };

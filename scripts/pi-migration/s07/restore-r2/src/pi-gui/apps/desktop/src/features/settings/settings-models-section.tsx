@@ -1,0 +1,239 @@
+import { useState, type ReactNode } from "react";
+import type {
+  RuntimeModelRecord,
+  RuntimeSettingsSnapshot,
+  RuntimeSnapshot,
+} from "@pi-gui/session-driver/runtime-types";
+import { useTranslation, type Translate } from "../../i18n";
+import { SearchIcon } from "../../ui/icons";
+import { SettingsSelect, SettingsSwitch } from "./settings-controls";
+import {
+  filterModels,
+  labelForThinking,
+  SettingsGroup,
+  SettingsRow,
+  THINKING_LEVELS,
+} from "./settings-utils";
+
+interface SettingsModelsSectionProps {
+  readonly runtime?: RuntimeSnapshot;
+  readonly onSetDefaultModel: (provider: string, modelId: string) => void;
+  readonly onSetThinkingLevel: (
+    thinkingLevel: RuntimeSettingsSnapshot["defaultThinkingLevel"],
+  ) => void;
+  readonly onSetScopedModelPatterns: (patterns: readonly string[]) => void;
+  readonly onOpenProviders: () => void;
+}
+
+function thinkingOptions(t: Translate) {
+  return THINKING_LEVELS.map((level) => ({ value: level, label: labelForThinking(level, t) }));
+}
+
+function modelPattern(model: RuntimeModelRecord): string {
+  return `${model.providerId}/${model.modelId}`;
+}
+
+/** Cursor's Models page: defaults on top, then one searchable list with a switch per model. */
+export function SettingsModelsSection({
+  runtime,
+  onSetDefaultModel,
+  onSetThinkingLevel,
+  onSetScopedModelPatterns,
+  onOpenProviders,
+}: SettingsModelsSectionProps) {
+  const { t } = useTranslation();
+  const [query, setQuery] = useState("");
+  const [showUnconnected, setShowUnconnected] = useState(false);
+
+  const models = runtime?.models ?? [];
+  const availableModels = models.filter((model) => model.available);
+  const unconnectedModels = models.filter((model) => !model.available);
+
+  // No saved patterns means pi enables every available model.
+  const savedPatterns = runtime?.settings.enabledModelPatterns ?? [];
+  const activePatterns =
+    savedPatterns.length === 0 ? availableModels.map(modelPattern) : savedPatterns;
+  const enabledModels = availableModels.filter((model) => model.scope !== "off");
+
+  const defaultProvider = runtime?.settings.defaultProvider;
+  const defaultModelId = runtime?.settings.defaultModelId;
+  const defaultValue =
+    defaultProvider && defaultModelId ? `${defaultProvider}:${defaultModelId}` : undefined;
+  const defaultIsEnabled = enabledModels.some(
+    (model) => model.providerId === defaultProvider && model.modelId === defaultModelId,
+  );
+
+  const searching = query.trim().length > 0;
+  const visibleAvailable = filterModels(availableModels, query);
+  const visibleUnconnected = filterModels(unconnectedModels, query);
+
+  const setEnabled = (pattern: string, enabled: boolean) => {
+    const next = enabled
+      ? [...activePatterns, pattern]
+      : activePatterns.filter((entry) => entry !== pattern);
+    if (next.length > 0) onSetScopedModelPatterns(next);
+  };
+
+  return (
+    <>
+      <SettingsGroup>
+        <SettingsRow title={t("ui.defaultModel")} description={t("ui.usedForNewThreads")}>
+          <SettingsSelect
+            label={t("ui.defaultModel")}
+            options={enabledModels.map((model) => ({
+              value: `${model.providerId}:${model.modelId}`,
+              label: `${model.providerName} · ${model.label}`,
+            }))}
+            value={defaultIsEnabled ? defaultValue : undefined}
+            onChange={(value) => {
+              const [provider = "", ...modelParts] = value.split(":");
+              onSetDefaultModel(provider, modelParts.join(":"));
+            }}
+          />
+        </SettingsRow>
+        <SettingsRow
+          title={t("ui.reasoning")}
+          description={t("ui.defaultReasoningEffortForNewThreads")}
+        >
+          <SettingsSelect
+            label={t("ui.reasoning")}
+            options={thinkingOptions(t)}
+            value={runtime?.settings.defaultThinkingLevel ?? undefined}
+            onChange={onSetThinkingLevel}
+          />
+        </SettingsRow>
+        {defaultValue && !defaultIsEnabled ? (
+          <div className="settings-row">
+            <span className="settings-warning">
+              {t("ui.yourDefaultModelValueValueIsTurnedOffOrItsProviderIs", {
+                defaultProvider: defaultProvider ?? "",
+                defaultModelId: defaultModelId ?? "",
+              })}
+            </span>
+          </div>
+        ) : null}
+      </SettingsGroup>
+
+      <section className="settings-section">
+        <div className="settings-section__header">
+          <h3 className="settings-section__title">
+            {t("ui.enabledModels")}{" "}
+            <span className="resource-list__count">
+              {t("models.enabledCount", {
+                enabled: enabledModels.length,
+                total: availableModels.length,
+              })}
+            </span>
+          </h3>
+          <label className="resource-search">
+            <SearchIcon />
+            <input
+              aria-label={t("ui.searchModels")}
+              placeholder={t("ui.searchModels")}
+              spellCheck={false}
+              type="search"
+              value={query}
+              onChange={(event) => setQuery(event.currentTarget.value)}
+            />
+          </label>
+        </div>
+        <p className="settings-section__description">
+          {t("ui.onlyEnabledModelsAppearInModelPickers")}
+        </p>
+        <div className="settings-group" data-testid="settings-model-list">
+          {visibleAvailable.length === 0 ? (
+            <div className="settings-row">
+              <span className="settings-row__description">
+                {availableModels.length === 0
+                  ? t("ui.noConnectedModelsAvailableYetConnectAProviderToAddModels")
+                  : t("ui.noConnectedModelsMatchValue", { value: query.trim() })}
+              </span>
+            </div>
+          ) : (
+            visibleAvailable.map((model) => {
+              const pattern = modelPattern(model);
+              const enabled = model.scope !== "off";
+              return (
+                <ModelRow
+                  isDefault={
+                    model.providerId === defaultProvider && model.modelId === defaultModelId
+                  }
+                  key={pattern}
+                  model={model}
+                >
+                  <SettingsSwitch
+                    checked={enabled}
+                    disabled={enabled && (activePatterns.length <= 1 || model.scope === "matched")}
+                    label={t("ui.enableValue5", { pattern: pattern })}
+                    onChange={(next) => setEnabled(pattern, next)}
+                  />
+                </ModelRow>
+              );
+            })
+          )}
+        </div>
+      </section>
+
+      {unconnectedModels.length > 0 && (!searching || visibleUnconnected.length > 0) ? (
+        <section className="settings-section">
+          <div className="settings-section__header">
+            <h3 className="settings-section__title">
+              {t("ui.notConnected")}{" "}
+              <span className="resource-list__count">{visibleUnconnected.length}</span>
+            </h3>
+            <button className="button button--secondary" type="button" onClick={onOpenProviders}>
+              {t("ui.connectAProvider")}
+            </button>
+          </div>
+          <p className="settings-section__description">
+            {t("ui.modelsFromProvidersYouHaveNotSignedInTo")}
+          </p>
+          {searching || showUnconnected ? (
+            <div className="settings-group" data-testid="settings-unconnected-model-list">
+              {visibleUnconnected.map((model) => (
+                <ModelRow isDefault={false} key={modelPattern(model)} model={model} />
+              ))}
+            </div>
+          ) : (
+            <button
+              className="resource-list__more"
+              type="button"
+              onClick={() => setShowUnconnected(true)}
+            >
+              {t("ui.showValueModels", { length: unconnectedModels.length })}
+            </button>
+          )}
+        </section>
+      ) : null}
+    </>
+  );
+}
+
+function ModelRow({
+  model,
+  isDefault,
+  children,
+}: {
+  readonly model: RuntimeModelRecord;
+  readonly isDefault: boolean;
+  readonly children?: ReactNode;
+}) {
+  const { t } = useTranslation();
+
+  return (
+    <div className="settings-row model-row">
+      <div className="settings-row__label">
+        <div className="settings-row__title">
+          {model.label}
+          {isDefault ? <span className="model-row__badge">{t("ui.default")}</span> : null}
+        </div>
+        <div className="settings-row__description">
+          {model.providerName} · {modelPattern(model)}
+          {model.reasoning ? <span className="model-row__tag">{t("ui.reasoning")}</span> : null}
+          {model.supportsImages ? <span className="model-row__tag">{t("ui.images")}</span> : null}
+        </div>
+      </div>
+      {children ? <div className="settings-row__control">{children}</div> : null}
+    </div>
+  );
+}

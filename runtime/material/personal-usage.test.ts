@@ -1,0 +1,13 @@
+import { it, expect, afterEach } from 'vitest';
+import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { PersonalUsage } from './personal-usage.js';
+import { reserveRequest } from './store.js';
+const dirs:string[]=[];
+const temp=()=>{const d=mkdtempSync(join(tmpdir(),'personal-'));dirs.push(d);return d};
+afterEach(()=>{for(const d of dirs.splice(0))rmSync(d,{recursive:true,force:true})});
+it('未确认不启用、不建设置；明确上限调整保留累计请求与旧设置',()=>{const root=temp(),usage=new PersonalUsage(root);expect(usage.status()).toEqual({enabled:false,limit:null,used:0,remaining:0});expect(()=>usage.confirmLimit(2,false)).toThrow('本人');expect(()=>usage.reserve('blocked','s','offline')).toThrow('尚未启用');expect(existsSync(join(root,'settings'))).toBe(false);usage.confirmLimit(2,true);usage.reserve('first','s','offline');const old=readFileSync(join(root,'settings/000001.json'),'utf8');usage.confirmLimit(4,true);expect(usage.status()).toEqual({enabled:true,limit:4,used:1,remaining:3});expect(readFileSync(join(root,'settings/000001.json'),'utf8')).toBe(old);expect(()=>usage.confirmLimit(0,true)).toThrow();expect(()=>reserveRequest(root)).toThrow('个人模式')});
+it('跨会话共享上限，并发预留只给三个，失败不退还，重启不归零',async()=>{const root=temp(),a=new PersonalUsage(root);a.confirmLimit(3,true);const calls=await Promise.allSettled(Array.from({length:7},(_,i)=>Promise.resolve().then(()=>new PersonalUsage(root).reserve('id'+i,'session'+i,'offline'))));expect(calls.filter(x=>x.status==='fulfilled')).toHaveLength(3);expect(new PersonalUsage(root).status().used).toBe(3);expect(()=>a.reserve('ninth','s','offline')).toThrow('调整累计上限');a.confirmLimit(4,true);expect(a.reserve('explicit-retry','s','offline')).toBe(4);expect(a.status().used).toBe(4)});
+it('坏设置哈希或缺号用量关闭发送，不重新建账',()=>{const root=temp(),u=new PersonalUsage(root);u.confirmLimit(3,true);const p=join(root,'settings/000001.json');writeFileSync(p,readFileSync(p,'utf8').replace('"limit": 3','"limit": 8'));expect(()=>u.status()).toThrow('损坏');const second=temp(),v=new PersonalUsage(second);v.confirmLimit(3,true);v.reserve('1','s','offline');v.reserve('2','s','offline');rmSync(join(second,'usage/000001.reserved.json'));expect(()=>v.status()).toThrow('缺失')});
+it('下调上限不能抹掉已用次数',()=>{const u=new PersonalUsage(temp());u.confirmLimit(4,true);u.reserve('1','s','offline');u.reserve('2','s','offline');expect(()=>u.confirmLimit(1,true)).toThrow('不能低于已用2');u.confirmLimit(2,true);expect(u.status()).toMatchObject({used:2,remaining:0});expect(()=>u.reserve('3','s','offline')).toThrow('调整')});

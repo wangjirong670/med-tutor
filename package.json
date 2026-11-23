@@ -1,0 +1,33 @@
+{
+  "name": "med-tutor",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "description": "面向医学/药学课程的桌面端「揉书」AI 学习工作台（MedTutor）",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:workbench": "node --test scripts/pi-migration/s08/learning-workbench-r4/phase1-unified-integration.test.mjs scripts/pi-migration/s08/learning-workbench-r4/phase2-agent-tools.test.mjs scripts/pi-migration/s08/learning-workbench-r4/phase2-service.test.mjs scripts/pi-migration/s08/learning-workbench-r4/phase2-real-textbook-e2e.test.mjs scripts/pi-migration/s08/learning-workbench-r4/domain-r2.test.mjs scripts/pi-migration/s08/learning-workbench-r4/trusted-writes.test.mjs scripts/pi-migration/s08/composer/r3/host-draft-regression.test.cjs",
+    "test:all": "npm test && npm run typecheck && npm run test:workbench",
+    "typecheck": "tsc --noEmit",
+    "desktop:build": "node scripts/build-desktop.mjs",
+    "desktop:package": "node scripts/package-desktop.mjs",
+    "desktop:package:dir": "node scripts/package-desktop.mjs --dir",
+    "desktop:start": "powershell -ExecutionPolicy Bypass -File scripts/start-desktop.ps1",
+    "desktop:mock": "powershell -ExecutionPolicy Bypass -File scripts/start-desktop.ps1 -OfflineMock",
+    "desktop:backup": "powershell -ExecutionPolicy Bypass -File scripts/backup-personal-data.ps1"
+  },
+  "dependencies": {
+    "yaml": "^2.9.1",
+    "zod": "^4.1.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.0",
+    "cross-env": "^10.1.0",
+    "fast-check": "^4.2.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.2.0"
+  }
+}

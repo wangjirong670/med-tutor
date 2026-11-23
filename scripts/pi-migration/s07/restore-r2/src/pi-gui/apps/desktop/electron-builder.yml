@@ -1,0 +1,72 @@
+appId: com.medtutor.desktop
+productName: MedTutor
+copyright: Copyright 2026 MedTutor
+electronVersion: 37.10.3
+
+directories:
+  output: ../../../../../../../../dist-desktop
+  buildResources: resources
+
+files:
+  - out/**/*
+  - package.json
+  - packages/pi-sdk-driver/package.json
+  - packages/pi-sdk-driver/dist/**/*
+  - packages/hermes-memory/package.json
+  - packages/hermes-memory/dist/**/*
+  - node_modules/**/*
+
+extraResources:
+  - from: resources/icon.png
+    to: icon.png
+  - from: ../../../../../../s08/learning-workbench-r4
+    to: med-tutor/learning-workbench-r4
+    filter:
+      - "**/*"
+      - "!**/*.test.*"
+      - "!**/*.spec.*"
+  - from: ../../../../../../../../scripts/windows-ocr.ps1
+    to: med-tutor/scripts/windows-ocr.ps1
+  - from: ../../../../../../../../scripts/material_pdf.py
+    to: med-tutor/scripts/material_pdf.py
+
+asar: true
+asarUnpack:
+  - "**/*.node"
+  - "**/*.wasm"
+  - "**/*.dll"
+  - "**/*.exe"
+  - "**/node_modules/node-pty/**"
+  - "**/node_modules/better-sqlite3/**"
+  - "**/node_modules/esbuild/**"
+  - "**/node_modules/@esbuild/**"
+  - "**/node_modules/@silvia-odwyer/photon-node/**"
+  - "**/node_modules/@earendil-works/pi-tui/native/**"
+npmRebuild: false
+
+artifactName: ${productName}-${version}-${arch}.${ext}
+
+win:
+  executableName: MedTutor
+  icon: resources/icon.ico
+  # Keep icon/version metadata editing; signing is optional without credentials.
+  signAndEditExecutable: true
+  target:
+    - target: nsis
+      arch:
+        - x64
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: MedTutor
+  menuCategory: MedTutor
+  uninstallDisplayName: MedTutor ${version}
+  unicode: true
+  include: installer.nsh
+  installerIcon: resources/icon.ico
+  uninstallerIcon: resources/icon.ico
+  installerHeaderIcon: resources/icon.ico
+  artifactName: ${productName}-${version}-x64-setup.${ext}
