@@ -63,12 +63,18 @@
 
 ## 快速开始
 
-### 环境要求
+### 方式一：直接下载 Windows 安装包（推荐日常使用）
+
+前往 [**GitHub Releases**](https://github.com/wangjirong670/med-tutor/releases/latest) 下载最新的 `MedTutor-*-x64-setup.exe` 安装包，安装后启动应用并在设置页填入你的 OpenAI 兼容 API Key（如 DeepSeek、Moonshot、OpenAI 等）即可开箱使用。
+
+### 方式二：从源码运行与打包
+
+#### 环境要求
 
 - **操作系统**：Windows 10 / 11（x64，图片 OCR 依赖 Windows 原生 OCR，桌面打包脚本面向 Windows）
 - **运行时**：Node.js 22+（核心逻辑）与 pnpm（桌面端 `pi-gui` 工作区依赖）
 
-### 1. 安装依赖
+#### 1. 安装依赖
 
 ```bash
 # 1) 安装根目录领域内核与测试依赖
@@ -78,7 +84,7 @@ npm install
 pnpm --dir scripts/pi-migration/s07/restore-r2/src/pi-gui install
 ```
 
-### 2. 配置模型接口（二选一）
+#### 2. 配置模型接口（二选一）
 
 - **方式 A（推荐）：应用内配置** — 启动桌面端后，直接在设置页或工作台配置面板填入你的 OpenAI 兼容 API Key、Base URL 与模型名称（如 DeepSeek、Moonshot、OpenAI 等）。
 - **方式 B：`.env` 文件配置** — 复制 [`.env.example`](.env.example) 为 `.env`（`.env` 已被 `.gitignore` 忽略，不会进入 Git）：
@@ -92,7 +98,7 @@ pnpm --dir scripts/pi-migration/s07/restore-r2/src/pi-gui install
   # MED_TUTOR_TEXTBOOK_ROOT=D:/path/to/your-textbooks
   ```
 
-### 3. 构建、运行与打包
+#### 3. 构建、运行与打包
 
 ```bash
 # 构建桌面端主进程 / 预加载 / 渲染层产物
@@ -110,7 +116,7 @@ npm run desktop:package:dir
 
 > 根目录也提供 [`启动医学揉书桌面端.cmd`](启动医学揉书桌面端.cmd) 方便日常双击启动。
 
-### 4. 数据安全与备份
+#### 4. 数据安全与备份
 
 - 开发模式下的个人会话、学习单、材料副本与 `USER.md` 均保存在 `.study/personal/`（不纳入 Git）。
 - 一键打包备份个人数据（自动保留最近 10 份至 `.study/backups/`）：
@@ -118,7 +124,7 @@ npm run desktop:package:dir
   npm run desktop:backup
   ```
 
-### 5. 运行测试
+#### 5. 运行测试
 
 ```bash
 # 依次执行 Vitest 领域单测、TypeScript 类型检查、工作台与 IME 回归测试
